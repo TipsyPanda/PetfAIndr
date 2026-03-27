@@ -57,10 +57,12 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-08-01' = {
         mode: 'System'
       }
     ]
-    addonProfiles: {
-      httpApplicationRouting: {
+    ingressProfile: {
+      webAppRouting: {
         enabled: true
       }
+    }
+    addonProfiles: {
       dapr: {
         enabled: true
         config: {
@@ -199,5 +201,5 @@ resource customVision 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
 // -----------------------------------------------------------------------
 output acrLoginServer string = acr.properties.loginServer
 output aksClusterName string = aks.name
-output httpRoutingZone string = aks.properties.addonProfiles.httpApplicationRouting.config.HTTPApplicationRoutingZoneName
+output webAppRoutingEnabled bool = aks.properties.ingressProfile.webAppRouting.enabled
 output cognitiveServicesEndpoint string = customVision.properties.endpoint
