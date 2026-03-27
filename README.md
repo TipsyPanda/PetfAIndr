@@ -18,6 +18,7 @@ az group create --name petfaindr-rg --location swedencentral
 ```powershell
 az provider register --namespace Microsoft.ContainerService
 az provider register --namespace Microsoft.ContainerRegistry
+az provider register --namespace Microsoft.ServiceBus
 ```
 
 Wait until both show `Registered`:
@@ -25,6 +26,7 @@ Wait until both show `Registered`:
 ```powershell
 az provider show --namespace Microsoft.ContainerService --query registrationState -o tsv
 az provider show --namespace Microsoft.ContainerRegistry --query registrationState -o tsv
+az provider show --namespace Microsoft.ServiceBus --query registrationState -o tsv
 ```
 
 ### 3. Create the managed identity for GitHub Actions

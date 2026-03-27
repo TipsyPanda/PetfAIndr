@@ -82,6 +82,18 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 }
 
 // -----------------------------------------------------------------------
+// Dapr Extension for AKS
+// -----------------------------------------------------------------------
+resource daprExtension 'Microsoft.KubernetesConfiguration/extensions@2023-05-01' = {
+  name: 'dapr'
+  scope: aks
+  properties: {
+    extensionType: 'Microsoft.Dapr'
+    autoUpgradeMinorVersion: true
+  }
+}
+
+// -----------------------------------------------------------------------
 // Azure Cosmos DB
 // -----------------------------------------------------------------------
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' = {
