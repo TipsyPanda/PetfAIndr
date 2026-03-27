@@ -2,9 +2,6 @@
 @secure()
 param kubeConfig string
 
-@description('DNS name of the HTTP Application Routing AddOn')
-param HTTPApplicationRoutingZoneName string
-
 extension kubernetes with {
   kubeConfig: kubeConfig
   namespace: 'default'
@@ -14,13 +11,13 @@ resource ingress 'networking.k8s.io/Ingress@v1' = {
   metadata: {
     name: 'frontend'
     annotations: {
-      'kubernetes.io/ingress.class': 'addon-http-application-routing'
+      'spec.ingressClassName': 'webapprouting.kubernetes.azure.com'
     }
   }
   spec: {
+    ingressClassName: 'webapprouting.kubernetes.azure.com'
     rules: [
       {
-        host: 'app.${HTTPApplicationRoutingZoneName}'
         http: {
           paths: [
             {
