@@ -32,6 +32,20 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Register resource providers
+        run: |
+          PROVIDERS="Microsoft.ContainerService Microsoft.ContainerRegistry Microsoft.ServiceBus Microsoft.DocumentDB Microsoft.CognitiveServices Microsoft.KubernetesConfiguration"
+          for ns in $PROVIDERS; do
+            az provider register --namespace "$ns"
+          done
+          for ns in $PROVIDERS; do
+            while [ "$(az provider show --namespace "$ns" --query registrationState -o tsv)" != "Registered" ]; do
+              echo "Waiting for $ns..."
+              sleep 10
+            done
+            echo "$ns registered."
+          done
+
       - name: Create resource group
         run: |
           az group create \
