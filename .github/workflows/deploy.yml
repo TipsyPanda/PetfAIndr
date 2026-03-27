@@ -1,0 +1,112 @@
+name: Deploy to AKS
+
+on:
+  workflow_run:
+    workflows:
+      - "Build and Push Images to ACR"
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Container image tag to deploy (e.g. sha-abc1234 or latest)'
+        required: false
+        default: 'latest'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RESOURCE_GROUP: RG-PetFaindr
+  CLUSTER_NAME: petfaindraks
+  CV_ACCOUNT: petspotraicustomvis1
+
+jobs:
+  deploy:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine image tag
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "IMAGE_TAG=${{ github.event.inputs.image_tag }}" >> $GITHUB_ENV
+          else
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            echo "IMAGE_TAG=sha-${SHA::7}" >> $GITHUB_ENV
+          fi
+
+      - name: Log in to Azure via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Query Custom Vision credentials from Azure
+        run: |
+          CV_KEY=$(az cognitiveservices account keys list \
+            --name ${{ env.CV_ACCOUNT }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query key1 -o tsv)
+          CV_ENDPOINT=$(az cognitiveservices account show \
+            --name ${{ env.CV_ACCOUNT }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.endpoint -o tsv)
+          CV_RESOURCE_ID=$(az cognitiveservices account show \
+            --name ${{ env.CV_ACCOUNT }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query id -o tsv)
+          echo "CV_KEY=$CV_KEY" >> $GITHUB_ENV
+          echo "CV_ENDPOINT=$CV_ENDPOINT" >> $GITHUB_ENV
+          echo "CV_RESOURCE_ID=$CV_RESOURCE_ID" >> $GITHUB_ENV
+
+      - name: Deploy config.bicep (K8s secrets)
+        uses: azure/arm-deploy@v2
+        with:
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ env.RESOURCE_GROUP }}
+          template: ./iac/config.bicep
+          parameters: >
+            cvapiTrainingEndpoint=${{ env.CV_ENDPOINT }}
+            cvapiTrainingKey=${{ env.CV_KEY }}
+            cvapiPredictionEndpoint=${{ env.CV_ENDPOINT }}
+            cvapiPredictionKey=${{ env.CV_KEY }}
+            cvapiProjectId=${{ secrets.CVAPI_PROJECT_ID }}
+            cvapiPredictionResourceId=${{ env.CV_RESOURCE_ID }}
+          failOnStdErr: false
+
+      - name: Apply Dapr component YAMLs
+        run: kubectl apply -f iac/dapr/
+
+      - name: Deploy app.bicep (K8s workloads)
+        uses: azure/arm-deploy@v2
+        with:
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ env.RESOURCE_GROUP }}
+          template: ./iac/app.bicep
+          parameters: containerTag=${{ env.IMAGE_TAG }}
+          failOnStdErr: false
+
+      - name: Deployment summary
+        run: |
+          echo "### Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- Image tag: \`${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Cluster: \`${{ env.CLUSTER_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Resource group: \`${{ env.RESOURCE_GROUP }}\`" >> $GITHUB_STEP_SUMMARY

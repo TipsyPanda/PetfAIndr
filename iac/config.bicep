@@ -10,6 +10,26 @@ param cosmosAccountName string = 'cospetfaindr'
 @description('Azure Service Bus authorization rule name')
 param serviceBusAuthorizationRuleName string = 'buspetfaindr/Dapr'
 
+@description('Custom Vision training endpoint URL')
+param cvapiTrainingEndpoint string
+
+@secure()
+@description('Custom Vision training API key')
+param cvapiTrainingKey string
+
+@description('Custom Vision prediction endpoint URL')
+param cvapiPredictionEndpoint string
+
+@secure()
+@description('Custom Vision prediction API key')
+param cvapiPredictionKey string
+
+@description('Custom Vision project ID')
+param cvapiProjectId string
+
+@description('Custom Vision prediction resource ID')
+param cvapiPredictionResourceId string
+
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-08-01' existing = {
   name: clusterName
 }
@@ -35,11 +55,11 @@ module secrets 'secrets.bicep' = {
     storageAccountName: storageAccount.name
     storageAccountKey: storageAccount.listKeys().keys[0].value
     serviceBusConnectionString: serviceBusAuthorizationRule.listKeys().primaryConnectionString
-    cvapiTrainingEndpoint: 'https://swedencentral.api.cognitive.microsoft.com/'
-    cvapiTrainingKey: 'fcff64a674a34493b765103997e16376'
-    cvapiPredictionEndpoint: 'https://swedencentral.api.cognitive.microsoft.com/'
-    cvapiPredictionKey: '8cd6b878a0a94adf8087b31cb627eec0'
-    cvapiProjectId: 'f219fa6d-9006-4595-94d7-804f896e5a9b'
-    cvapiPredictionResourceId: '/subscriptions/52d55cac-3b07-467e-969f-073f0a07b78e/resourceGroups/RG-PetFaindr/providers/Microsoft.CognitiveServices/accounts/petspotraicustomvis1'
+    cvapiTrainingEndpoint: cvapiTrainingEndpoint
+    cvapiTrainingKey: cvapiTrainingKey
+    cvapiPredictionEndpoint: cvapiPredictionEndpoint
+    cvapiPredictionKey: cvapiPredictionKey
+    cvapiProjectId: cvapiProjectId
+    cvapiPredictionResourceId: cvapiPredictionResourceId
   }
 }

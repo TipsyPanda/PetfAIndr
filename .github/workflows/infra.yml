@@ -1,0 +1,57 @@
+name: Provision Infrastructure
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'iac/infra.bicep'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RESOURCE_GROUP: RG-PetFaindr
+  LOCATION: swedencentral
+
+jobs:
+  provision:
+    name: Provision Azure Resources
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create resource group
+        run: |
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }}
+
+      - name: Deploy infra.bicep
+        uses: azure/arm-deploy@v2
+        with:
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ env.RESOURCE_GROUP }}
+          template: ./iac/infra.bicep
+          failOnStdErr: false
+
+      - name: Remind about Custom Vision project
+        run: |
+          echo "### Infrastructure Provisioned" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next step (manual, one-time only):**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to https://www.customvision.ai and sign in" >> $GITHUB_STEP_SUMMARY
+          echo "2. Create a new Classification project using the \`petspotraicustomvis1\` resource" >> $GITHUB_STEP_SUMMARY
+          echo "3. Copy the Project ID from Project Settings" >> $GITHUB_STEP_SUMMARY
+          echo "4. Add it as GitHub Secret \`CVAPI_PROJECT_ID\`" >> $GITHUB_STEP_SUMMARY
