@@ -52,7 +52,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-08-01' = {
       {
         name: 'nodepool1'
         count: 2
-        vmSize: 'Standard_DS2_v2'
+        vmSize: 'Standard_B2s_v2'
         osType: 'Linux'
         mode: 'System'
       }
