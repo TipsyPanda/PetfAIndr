@@ -1,0 +1,59 @@
+@page "/status"
+
+@using System
+@using System.IO
+@using Microsoft.AspNetCore.Hosting
+@using Microsoft.Extensions.Logging
+@using Dapr.Client
+@using PetSpotR.Models
+@inject ILogger<LostPet> Logger
+@inject IWebHostEnvironment Environment
+@inject NavigationManager NavigationManager
+
+@code {
+    private IEnumerable<PetModel> pets;
+
+    public Status()
+    {
+        this.pets = new List<PetModel>();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var daprClient = new DaprClientBuilder().Build();
+        pets = await PetModel.GetPetStateAsync(daprClient, "pets");
+    }
+}
+
+
+<PageTitle>Current status of lost pets</PageTitle>
+
+<center>
+        <h1>Overview of currently registered Pets with their status</h1>
+
+        <br />
+        <br />
+        <br />
+
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>State</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var pet in pets)
+                {
+                    <tr>
+                        <td>@pet.Name</td>
+                        <td>@pet.Type</td>
+                        <td>@pet.State</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    
+
+</center>

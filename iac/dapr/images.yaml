@@ -1,0 +1,20 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: images
+spec:
+  type: bindings.azure.blobstorage
+  version: v1
+  metadata:
+  - name: accountName
+    secretKeyRef:
+      name: storage
+      key: accountName
+  - name: containerName
+    value: images
+  - name: accountKey
+    secretKeyRef:
+      name: storage
+      key: accountKey
+  - name: decodeBase64
+    value: true

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'g:/My Drive/FHNW_MSC_BSI/09_Cloud/Assigment1/PetfAIndr' -name *.yml -o -name *.yaml)"
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: 600;
+    font-size: large;
+    background-color: #43b0e1 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+nav li {
+    margin: 0 20px;
+}
+
+nav li a {
+    color: white !important;
+}
+
+@media (min-width: 641px) {
+    .page {
+        flex-direction: row;
+    }
+}

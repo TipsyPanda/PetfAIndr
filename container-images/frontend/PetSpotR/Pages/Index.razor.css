@@ -1,0 +1,26 @@
+.splash {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+img {
+    margin: auto;
+    display: block;
+    max-width: 50%;
+}
+
+h2 {
+    text-align: center;
+}
+
+.buttons {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 20px;
+}
+
+.buttons a {
+    margin: 20px;
+}
