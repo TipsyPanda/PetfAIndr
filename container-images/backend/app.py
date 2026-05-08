@@ -8,6 +8,7 @@ from dapr.clients import DaprClient
 from petfaindr import pet
 import requests
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -34,6 +35,38 @@ pubsubbroker = 'pubsub'
 def get_state_with_retry(store_name, key):
     """Retrieve state from Dapr with automatic retry on transient failures."""
     return dapr.get_state(store_name=store_name, key=key)
+
+# Custom Vision permits only one training per project at a time. Without this
+# lock concurrent /lostPet submissions race and most return BadRequestTrainInProgress.
+training_lock = threading.Lock()
+
+def _err_body(e):
+    """Extract response body from a RequestException for logging, if any."""
+    try:
+        return e.response.text if e.response is not None else ''
+    except Exception:
+        return ''
+
+def wait_for_training_completion(iteration_id, headers, max_wait_seconds=900, poll_interval=10):
+    """Poll Custom Vision iteration status until Completed/Failed or timeout. Returns True on Completed."""
+    url = training_endpoint + "customvision/v3.3/training/projects/" + project_id + "/iterations/" + iteration_id
+    deadline = time.time() + max_wait_seconds
+    while time.time() < deadline:
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            status = response.json().get('status')
+            ts = time.strftime("%H:%M:%S", time.localtime())
+            print(f'{ts}: Iteration {iteration_id} status: {status}', flush=True)
+            if status == 'Completed':
+                return True
+            if status == 'Failed':
+                return False
+        except requests.exceptions.RequestException as e:
+            print(f'Error polling iteration status: {e} | body: {_err_body(e)}', flush=True)
+        time.sleep(poll_interval)
+    print(f'Timeout waiting for iteration {iteration_id} to complete', flush=True)
+    return False
 
 # Create a thread pool executor
 executor = ThreadPoolExecutor(max_workers=10)
@@ -94,7 +127,7 @@ def process_lost_pet(event):
          print(f'Successfully created the tag with Tag-ID ' + response.json()['id'] + ' and name (as cosmos db entry id) ' + response.json()['name'], flush=True)
          tag_id = response.json()['id']
     except requests.exceptions.RequestException as e:
-          print(f'Error sending data to Azure Custom Vision: {e}', flush=True)
+          print(f'Error sending data to Azure Custom Vision: {e} | body: {_err_body(e)}', flush=True)
           return
 
     ### Add Images to the newly created tag
@@ -111,70 +144,66 @@ def process_lost_pet(event):
             response.raise_for_status() # Raise an exception for 4xx/5xx responses - for 200 OK, the code will continue
             print(f'Successfully added image {image} to the tag with id {tag_id}', flush=True)
         except requests.exceptions.RequestException as e:
-            print(f'Error while adding images to the new tag in Azure Custom Vision: {e}', flush=True)
+            print(f'Error while adding images to the new tag in Azure Custom Vision: {e} | body: {_err_body(e)}', flush=True)
             return
 
-    ### Train the model and get the iteration ID
+    ### Wait for Custom Vision to index the freshly uploaded images before training
     current_time_str = time.strftime("%H:%M:%S", time.localtime())
     print(f'{current_time_str}: Waiting for 30 sec. until the uploaded images are correctly tagged and referenced in the Custom Vision Service ...', flush=True)
     time.sleep(30)
-    detailed_url = training_endpoint + "customvision/v3.3/training/projects/" +project_id + "/train?forceTrain=true"
-    # Send the POST request to Azure Custom Vision
-    try:
-        response = requests.post(detailed_url, headers=headerss)
-        response.raise_for_status() # Raise an exception for 4xx/5xx responses - for 200 OK, the code will continue
-        print(f'Successfully started a new training iteration of the model with the new set of images!', flush=True)
-        iteration_id = response.json()['id']
-        #store the iteration id for later usage in the DB
-        db_iteration_id = { "id": iteration_id }
-    except requests.exceptions.RequestException as e:
-            print(f'Error while starting the training of the model: {e}', flush=True)
-            return #stopping, since the overall process is broken.
 
-    ### Wait until the new iteration is trained
-    current_time_str = time.strftime("%H:%M:%S", time.localtime())
-    print(f'{current_time_str}: Waiting for 10 Min. (divided in 2 steps) until the model has been trained with the new images, so it can be published ...', flush=True)
-    time.sleep(300)
-    current_time_str = time.strftime("%H:%M:%S", time.localtime())
-    print(f'{current_time_str}: 2nd of 2 wait cycles started', flush=True)
-    time.sleep(300)
-    current_time_str = time.strftime("%H:%M:%S", time.localtime())
-    print(f'{current_time_str}: End of the waiting cycle to ensure the model got properly trained with the new images', flush=True)
-    
-    #Check for published iterations and delete them
-    try:
-        result = get_state_with_retry(store_name=statestore, key="published_db_iteration_id")
-                
-        if result.data:
-            data = json.loads(result.data)
-            last_published_iteration_id = data['id']
-            detailed_url = training_endpoint + "customvision/v3.3/training/projects/" +project_id + "/iterations/" + last_published_iteration_id + "/publish"
-            # Send the POST request to Azure Custom Vision
-            response = requests.delete(detailed_url, headers=headerss)
-            response.raise_for_status() # Raise an exception for 4xx/5xx responses - for 200 OK, the code will continue
-            print(f'Successfully unpublished iteration with ID: {last_published_iteration_id} ', flush=True)
-        else:
-             print(f'No published iteration ID found in the state store. Continuing with publishing the new iteration.', flush=True)
-        
-    except (requests.exceptions.RequestException, json.JSONDecodeError, Exception) as e:
-        current_time_str = time.strftime("%H:%M:%S", time.localtime())
-        print(f'{current_time_str}: Error while unpublishing previous iteration. Error is: {type(e).__name__}: {e}', flush=True)
-        # Stopping the execution, since the existence of a published iteration blocks the pulication of a new one.
-        return
-    
-    ### Publish the new iteration and save the new iteration id in the state store
-    detailed_url = training_endpoint + "customvision/v3.3/training/projects/" +project_id + "/iterations/" + iteration_id + "/publish?publishName=" + iteration_publish_name + "&predictionId=" + prediction_resource_id
-    # Send the POST request to Azure Custom Vision
-    try:
-        response = requests.post(detailed_url, headers=headerss)
-        response.raise_for_status() # Raise an exception for 4xx/5xx responses - for 200 OK, the code will continue
-        current_time_str = time.strftime("%H:%M:%S", time.localtime())
-        print(f'{current_time_str}: Successfully published the model with the name {iteration_publish_name}!', flush=True)
-        dapr.save_state(store_name=statestore, key="published_db_iteration_id", value=json.dumps(db_iteration_id))
-        current_time_str = time.strftime("%H:%M:%S", time.localtime())
-        print(f'{current_time_str}: Successfully saved the new published iteration id -{iteration_id}- to the state store.', flush=True)
-    except requests.exceptions.RequestException as e:
-        print(f'Error while publishing the newest model on the Azure Custom Vision service: {e}', flush=True)
+    # Serialize train+wait+publish: Custom Vision allows only one training per project at a time,
+    # and the unpublish-then-publish dance shares global state ("publishediteration" name).
+    with training_lock:
+        ### Train the model and get the iteration ID
+        detailed_url = training_endpoint + "customvision/v3.3/training/projects/" +project_id + "/train?forceTrain=true"
+        try:
+            response = requests.post(detailed_url, headers=headerss)
+            response.raise_for_status()
+            print(f'Successfully started a new training iteration of the model with the new set of images!', flush=True)
+            iteration_id = response.json()['id']
+            db_iteration_id = { "id": iteration_id }
+        except requests.exceptions.RequestException as e:
+            print(f'Error while starting the training of the model: {e} | body: {_err_body(e)}', flush=True)
+            return
+
+        ### Poll iteration status until it's Completed (replaces two hardcoded 5-min sleeps).
+        if not wait_for_training_completion(iteration_id, headerss):
+            print(f'Training iteration {iteration_id} did not reach Completed; aborting publish.', flush=True)
+            return
+
+        #Check for published iterations and delete them
+        try:
+            result = get_state_with_retry(store_name=statestore, key="published_db_iteration_id")
+
+            if result.data:
+                data = json.loads(result.data)
+                last_published_iteration_id = data['id']
+                detailed_url = training_endpoint + "customvision/v3.3/training/projects/" +project_id + "/iterations/" + last_published_iteration_id + "/publish"
+                response = requests.delete(detailed_url, headers=headerss)
+                response.raise_for_status()
+                print(f'Successfully unpublished iteration with ID: {last_published_iteration_id} ', flush=True)
+            else:
+                print(f'No published iteration ID found in the state store. Continuing with publishing the new iteration.', flush=True)
+
+        except (requests.exceptions.RequestException, json.JSONDecodeError, Exception) as e:
+            current_time_str = time.strftime("%H:%M:%S", time.localtime())
+            body = _err_body(e) if isinstance(e, requests.exceptions.RequestException) else ''
+            print(f'{current_time_str}: Error while unpublishing previous iteration. Error is: {type(e).__name__}: {e} | body: {body}', flush=True)
+            return
+
+        ### Publish the new iteration and save the new iteration id in the state store
+        detailed_url = training_endpoint + "customvision/v3.3/training/projects/" +project_id + "/iterations/" + iteration_id + "/publish?publishName=" + iteration_publish_name + "&predictionId=" + prediction_resource_id
+        try:
+            response = requests.post(detailed_url, headers=headerss)
+            response.raise_for_status()
+            current_time_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f'{current_time_str}: Successfully published the model with the name {iteration_publish_name}!', flush=True)
+            dapr.save_state(store_name=statestore, key="published_db_iteration_id", value=json.dumps(db_iteration_id))
+            current_time_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f'{current_time_str}: Successfully saved the new published iteration id -{iteration_id}- to the state store.', flush=True)
+        except requests.exceptions.RequestException as e:
+            print(f'Error while publishing the newest model on the Azure Custom Vision service: {e} | body: {_err_body(e)}', flush=True)
 
 @app.route('/lostPet', methods=['POST'])
 def lostPet():
@@ -220,7 +249,7 @@ def process_found_pet(event):
                 except Exception as e:
                     print(f'Error updating state store: {e}', flush=True)
     except requests.exceptions.RequestException as e:
-        print(f'Error sending data to Azure Custom Vision: {e}', flush=True)
+        print(f'Error sending data to Azure Custom Vision: {e} | body: {_err_body(e)}', flush=True)
 
 @app.route('/foundPet', methods=['POST'])
 def foundPet():
