@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find 'g:/My Drive/FHNW_MSC_BSI/09_Cloud/Assigment1/PetfAIndr' -name *.yml -o -name *.yaml)"
+      "Bash(find 'g:/My Drive/FHNW_MSC_BSI/09_Cloud/Assigment1/PetfAIndr' -name *.yml -o -name *.yaml)",
+      "Bash(unzip -p \"PetfAIndr \\(1\\).zip\" \"PetfAIndr/iac/config.bicep\")",
+      "Bash(unzip -p \"PetfAIndr \\(1\\).zip\" \"PetfAIndr/iac/app/backend.bicep\")",
+      "Bash(unzip -p \"PetfAIndr \\(1\\).zip\" \"PetfAIndr/iac/app.bicep\")",
+      "Bash(unzip -p \"PetfAIndr \\(1\\).zip\" \"PetfAIndr/iac/app/frontend.bicep\")",
+      "Bash(unzip -p \"PetfAIndr \\(1\\).zip\" \"PetfAIndr/iac/secrets.bicep\")",
+      "Bash(unzip -p \"PetfAIndr \\(1\\).zip\" \"PetfAIndr/container-images/backend/app.py\")"
     ]
   }
 }
